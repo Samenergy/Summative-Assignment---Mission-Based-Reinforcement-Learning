@@ -72,7 +72,7 @@ class EnhancedCallback(BaseCallback):
 class REINFORCE:
     """Enhanced REINFORCE implementation with curriculum learning support"""
     
-    def __init__(self, env, learning_rate=0.0003, gamma=0.99, entropy_coef=0.01):
+    def __init__(self, env, learning_rate=0.0003, gamma=0.99, entropy_coef=0.01, num_episodes=15000):
         self.env = env
         self.policy = ActorCriticPolicy(
             observation_space=env.observation_space,
@@ -82,6 +82,7 @@ class REINFORCE:
         self.optimizer = torch.optim.Adam(self.policy.parameters(), lr=learning_rate, weight_decay=1e-5)
         self.gamma = gamma
         self.entropy_coef = entropy_coef
+        self.num_episodes = num_episodes
         self.rewards = []
         self.mean_rewards = []
         self.best_mean_reward = -np.inf
@@ -89,7 +90,10 @@ class REINFORCE:
         self.efficiency_scores = []
         self.high_value_selections = []
 
-    def train(self, num_episodes=15000):
+    def train(self, num_episodes=None):
+        if num_episodes is None:
+            num_episodes = self.num_episodes
+            
         print(f"🚀 Training REINFORCE for {num_episodes} episodes...")
         print(f"📊 Learning Rate: {self.optimizer.param_groups[0]['lr']}")
         print(f"📊 Gamma: {self.gamma}")
@@ -97,17 +101,31 @@ class REINFORCE:
         print("=" * 60)
         
         for episode in range(num_episodes):
-            obs, _ = self.env.reset()
+            obs = self.env.reset()
             done = False
             log_probs = []
             episode_rewards = []
             
             while not done:
-                obs_tensor = torch.tensor(obs, dtype=torch.float32).unsqueeze(0)
+                # Handle observation format from DummyVecEnv
+                if isinstance(obs, (list, tuple)) and len(obs) > 0:
+                    obs_array = obs[0] if isinstance(obs[0], np.ndarray) else np.array(obs[0])
+                else:
+                    obs_array = np.array(obs) if obs is not None else np.zeros(6)
+                
+                obs_tensor = torch.tensor(obs_array, dtype=torch.float32).unsqueeze(0)
                 action, value, log_prob = self.policy.forward(obs_tensor)
                 log_probs.append(log_prob)
-                obs, reward, done, _, info = self.env.step(action.item())
-                episode_rewards.append(reward)
+                # DummyVecEnv expects a list of actions
+                result = self.env.step([action.item()])
+                if len(result) == 5:
+                    obs, reward, terminated, truncated, info = result
+                    done = terminated[0] or truncated[0]
+                    episode_rewards.append(reward[0])
+                else:
+                    # Handle older gym format
+                    obs, reward, done, info = result
+                    episode_rewards.append(reward[0])
             
             # Track episode statistics
             episode_reward = sum(episode_rewards)
@@ -361,22 +379,20 @@ def train_with_curriculum(model_type="DQN", total_timesteps=300000):
             elif model_type == "REINFORCE":
                 # REINFORCE needs special handling since it's not a Stable-Baselines3 model
                 params = AdaptiveHyperparameters.get_reinforce_params(0.5)
-                # Create a simple environment for REINFORCE (not wrapped in DummyVecEnv)
-                simple_env = B2BNewsSelectionEnv(max_articles=int(20 * (0.5 + phase['difficulty'] * 0.5)))
-                model = REINFORCE(simple_env, **params)
+                # Use the same environment as other models for consistency
+                model = REINFORCE(env, **params)
         else:
             # Continue training existing model
             if model_type != "REINFORCE":
                 model.set_env(env)
             else:
                 # For REINFORCE, update the environment
-                simple_env = B2BNewsSelectionEnv(max_articles=int(20 * (0.5 + phase['difficulty'] * 0.5)))
-                model.env = simple_env
+                model.env = env
         
         # Train based on model type
         if model_type == "REINFORCE":
             # REINFORCE training
-            model.train(num_episodes=params['num_episodes'])
+            model.train()
             
             # Create a simple callback for REINFORCE
             callback = EnhancedCallback()

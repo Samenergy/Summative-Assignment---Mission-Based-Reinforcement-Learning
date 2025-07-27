@@ -117,7 +117,7 @@ class SimpleNeuralNetworkVisualizer:
             start_node = connection[0]
             end_node = connection[1]
             strength = (start_node['value'] + end_node['value']) / 2
-            color_intensity = int(255 * strength)
+            color_intensity = max(0, min(255, int(255 * strength)))
             color = (color_intensity, color_intensity, color_intensity)
             
             pygame.draw.line(screen, color, 
@@ -135,8 +135,8 @@ class SimpleNeuralNetworkVisualizer:
                 color = COLORS['success']
             
             # Adjust brightness based on activation
-            brightness = int(255 * node['value'])
-            color = tuple(min(255, c + brightness) for c in color[:3])
+            brightness = max(0, min(255, int(255 * node['value'])))
+            color = tuple(max(0, min(255, c + brightness)) for c in color[:3])
             
             # Draw node
             pygame.draw.circle(screen, color, (node['x'], node['y']), 8)

@@ -61,6 +61,9 @@ class EnhancedEvaluator:
             for step in range(self.max_steps_per_episode):
                 # Get model prediction
                 action, _ = model.predict(obs, deterministic=True)
+                # Convert action to int if it's a numpy array
+                if isinstance(action, np.ndarray):
+                    action = int(action.item())
                 episode_actions.append(action)
                 action_distributions[action] += 1
                 
@@ -193,9 +196,10 @@ class EnhancedEvaluator:
                            f'{value}', ha='center', va='bottom', fontweight='bold')
         
         # 4. Reward Distribution
+        colors = ['#FF6B6B', '#4ECDC4', '#45B7D1', '#96CEB4', '#FFEAA7', '#DDA0DD']
         for i, name in enumerate(model_names):
             axes[1, 0].hist(self.results[name]['episode_rewards'], alpha=0.6, 
-                           label=name, bins=15, color=['#FF6B6B', '#4ECDC4', '#45B7D1'][i])
+                           label=name, bins=15, color=colors[i % len(colors)])
         axes[1, 0].set_title('Reward Distribution', fontweight='bold')
         axes[1, 0].set_xlabel('Episode Reward')
         axes[1, 0].set_ylabel('Frequency')
@@ -222,7 +226,7 @@ class EnhancedEvaluator:
         # 6. Quality Score Distribution
         for i, name in enumerate(model_names):
             axes[1, 2].hist(self.results[name]['quality_scores'], alpha=0.6,
-                           label=name, bins=15, color=['#FF6B6B', '#4ECDC4', '#45B7D1'][i])
+                           label=name, bins=15, color=colors[i % len(colors)])
         axes[1, 2].set_title('Quality Score Distribution', fontweight='bold')
         axes[1, 2].set_xlabel('Article Quality Score')
         axes[1, 2].set_ylabel('Frequency')

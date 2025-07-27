@@ -169,10 +169,10 @@ def main():
     
     env = B2BNewsSelectionEnv()
     models = {
-        "DQN": ("models/dqn/dqn_b2b.zip", lambda path: DQN.load(path)),
-        "PPO": ("models/pg/ppo_b2b.zip", lambda path: PPO.load(path)),
-        "A2C": ("models/pg/a2c_b2b.zip", lambda path: A2C.load(path)),
-        "REINFORCE": ("models/pg/reinforce_b2b.pt", lambda path: load_reinforce_model(env, path))
+        "DQN": ("models/enhanced/dqn/best_dqn", lambda path: DQN.load(path)),
+        "PPO": ("models/enhanced/ppo/best_ppo", lambda path: PPO.load(path)),
+        "A2C": ("models/enhanced/a2c/best_a2c", lambda path: A2C.load(path)),
+        "REINFORCE": ("models/enhanced/reinforce/best_reinforce.pt", lambda path: load_reinforce_model(env, path))
     }
     
     print("\n📋 Available Models:", ", ".join(models.keys()))

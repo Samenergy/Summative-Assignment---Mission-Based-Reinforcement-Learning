@@ -342,10 +342,10 @@ def main():
     
     # Define model paths (update these paths based on your trained models)
     model_paths = {
-        "DQN": "models/enhanced/dqn/best_dqn",
-        "PPO": "models/enhanced/ppo/best_ppo", 
-        "A2C": "models/enhanced/a2c/best_a2c",
-        "REINFORCE": "models/enhanced/reinforce/best_reinforce"
+        "DQN": "models/dqn/best_dqn",
+        "PPO": "models/ppo/best_ppo", 
+        "A2C": "models/a2c/best_a2c",
+        "REINFORCE": "models/reinforce/best_reinforce"
     }
     
     # Check which models exist

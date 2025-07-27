@@ -405,7 +405,9 @@ def train_policy_gradient_with_curriculum(model_type="PPO", total_timesteps=3000
             'mean_rewards': [float(x) for x in callback.mean_rewards],
             'episode_lengths': [int(x) for x in callback.episode_lengths],
             'efficiency_scores': [float(x) for x in callback.efficiency_scores],
-            'high_value_selections': [int(x) for x in callback.high_value_selections]
+            'high_value_selections': [int(x) for x in callback.high_value_selections],
+            # --- Save last action distribution ---
+            'last_action_distribution': action_dist if 'action_dist' in locals() else None
         }
         
         if model_type == "REINFORCE":

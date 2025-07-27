@@ -22,11 +22,14 @@ class B2BNewsSelectionEnv(gym.Env):
         self.current_article_idx = 0
         
         # Enhanced observation space with more features
-        self.observation_space = spaces.Box(
-            low=np.array([0, -1, 0, 0, 0, 0]),  # Added time pressure and article quality
-            high=np.array([1, 1, 1, 1, 1, 1]),
-            dtype=np.float32
-        )
+        self.observation_space = spaces.Dict({
+            'topic_relevance': spaces.Box(low=0, high=1, shape=(), dtype=np.float32),
+            'sentiment': spaces.Box(low=-1, high=1, shape=(), dtype=np.float32),
+            'recency': spaces.Box(low=0, high=1, shape=(), dtype=np.float32),
+            'company_match': spaces.Box(low=0, high=1, shape=(), dtype=np.float32),
+            'time_pressure': spaces.Box(low=0, high=1, shape=(), dtype=np.float32),
+            'quality_score': spaces.Box(low=0, high=1, shape=(), dtype=np.float32),
+        })
         
         # Action space: Skip (0), Select (1), Prioritize (2)
         self.action_space = spaces.Discrete(3)
@@ -59,6 +62,8 @@ class B2BNewsSelectionEnv(gym.Env):
         
         # Time pressure mechanism
         self.time_pressure = 1.0  # Decreases over time
+        # --- Action distribution tracking ---
+        self.action_counts = [0, 0, 0]  # [Skip, Select, Prioritize]
         
     def _generate_enhanced_articles(self):
         """Generate more diverse and realistic articles"""
@@ -229,63 +234,68 @@ class B2BNewsSelectionEnv(gym.Env):
         return base_reward
     
     def _get_enhanced_state(self):
-        """Get enhanced state representation"""
+        """Get enhanced state representation as a dict"""
         if self.current_article_idx >= len(self.articles):
-            return np.zeros(6)
-        
+            return {
+                'topic_relevance': 0.0,
+                'sentiment': 0.0,
+                'recency': 0.0,
+                'company_match': 0.0,
+                'time_pressure': 0.0,
+                'quality_score': 0.0
+            }
         article = self.articles[self.current_article_idx]
-        
-        # Enhanced state features
-        state = np.array([
-            article['topic_relevance'],      # Topic relevance to business
-            article['sentiment'],            # Sentiment score
-            article['recency'],              # Recency score
-            article['company_match'],        # Company match
-            self.time_pressure,              # Time pressure (decreases over time)
-            article['quality_score']         # Overall quality score
-        ], dtype=np.float32)
-        
+        state = {
+            'topic_relevance': float(article['topic_relevance']),
+            'sentiment': float(article['sentiment']),
+            'recency': float(article['recency']),
+            'company_match': float(article['company_match']),
+            'time_pressure': float(self.time_pressure),
+            'quality_score': float(article['quality_score'])
+        }
         return state
 
     def step(self, action):
         """Execute one step in the environment"""
         if self.current_article_idx >= len(self.articles):
             return self._get_enhanced_state(), 0, True, False, {}
-        
         article = self.articles[self.current_article_idx]
-        
+        # --- Track actions ---
+        self.action_counts[action] += 1
+        # --- Per-step penalty for 'Prioritize' overuse ---
+        total_so_far = sum(self.action_counts)
+        prioritize_ratio = self.action_counts[2] / max(1, total_so_far)
+        penalty = 0.0
+        if action == 2 and prioritize_ratio > 0.3:
+            penalty = -0.2
         # Calculate enhanced reward
-        reward = self._calculate_enhanced_reward(action, article)
+        reward = self._calculate_enhanced_reward(action, article) + penalty
         self.total_reward += reward
-        
         # Track actions
         if action == 1:  # Select
             self.selected_articles.append(article)
         elif action == 2:  # Prioritize
             self.prioritized_articles.append(article)
-        
         # Update time pressure
         self.time_pressure = max(0.1, 1.0 - (self.current_article_idx / self.max_articles))
-        
         # Move to next article
         self.current_article_idx += 1
-        
         # Check if episode is done
         done = self.current_article_idx >= len(self.articles)
-        
-        # Calculate efficiency score
         if done:
+            # --- Diversity bonus if all actions used ---
+            if all(c > 0 for c in self.action_counts):
+                reward += 1.0
+            # Calculate efficiency score
             total_high_quality = sum(1 for a in self.articles if a['quality_score'] > 0.7)
             selected_high_quality = sum(1 for a in self.selected_articles + self.prioritized_articles 
                                       if a['quality_score'] > 0.7)
             self.episode_stats['efficiency_score'] = selected_high_quality / max(1, total_high_quality)
-            
             # Final efficiency bonus
             if self.episode_stats['efficiency_score'] > 0.8:
                 reward += 2.0
             elif self.episode_stats['efficiency_score'] > 0.6:
                 reward += 1.0
-        
         # Enhanced info dict
         info = {
             'article_id': article['id'],
@@ -294,29 +304,26 @@ class B2BNewsSelectionEnv(gym.Env):
             'high_value_selections': self.episode_stats['high_value_selections'],
             'time_pressure': self.time_pressure
         }
-        
         return self._get_enhanced_state(), reward, done, False, info
     
     def reset(self, seed=None):
         """Reset the environment"""
         super().reset(seed=seed)
-        
         self.current_article_idx = 0
         self.total_reward = 0
         self.selected_articles = []
         self.prioritized_articles = []
         self.time_pressure = 1.0
-        
+        # --- Reset action distribution ---
+        self.action_counts = [0, 0, 0]
         # Reset episode stats
         self.episode_stats = {
             'high_value_selections': 0,
             'missed_opportunities': 0,
             'efficiency_score': 0
         }
-        
         # Regenerate articles for variety
         self.articles = self._generate_enhanced_articles()
-        
         return self._get_enhanced_state(), {}
     
     def render(self):
@@ -352,3 +359,10 @@ class B2BNewsSelectionEnv(gym.Env):
             'time_pressure': self.time_pressure,
             'efficiency_score': self.episode_stats['efficiency_score']
         }
+
+    def get_action_distribution(self):
+        """Return the action distribution for the last episode."""
+        total = sum(self.action_counts)
+        if total == 0:
+            return [0.0, 0.0, 0.0]
+        return [c / total for c in self.action_counts]

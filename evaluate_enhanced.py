@@ -59,8 +59,20 @@ class EnhancedEvaluator:
             episode_qualities = []
             
             for step in range(self.max_steps_per_episode):
+                # Convert dict obs to flat array for model input
+                if isinstance(obs, dict):
+                    obs_arr = np.array([
+                        obs['topic_relevance'],
+                        obs['sentiment'],
+                        obs['recency'],
+                        obs['company_match'],
+                        obs['time_pressure'],
+                        obs['quality_score']
+                    ], dtype=np.float32)
+                else:
+                    obs_arr = obs
                 # Get model prediction
-                action, _ = model.predict(obs, deterministic=True)
+                action, _ = model.predict(obs_arr, deterministic=True)
                 # Convert action to int if it's a numpy array
                 if isinstance(action, np.ndarray):
                     action = int(action.item())

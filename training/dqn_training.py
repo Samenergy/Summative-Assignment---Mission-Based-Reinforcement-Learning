@@ -52,6 +52,11 @@ class EnhancedCallback(BaseCallback):
                 info = self.locals['infos'][0]
                 self.efficiency_scores.append(info.get('efficiency_score', 0))
                 self.high_value_selections.append(info.get('high_value_selections', 0))
+                # --- Log action distribution if available ---
+                if hasattr(self.training_env.envs[0], 'get_action_distribution'):
+                    action_dist = self.training_env.envs[0].get_action_distribution()
+                    print(f"  Action Distribution: Skip={action_dist[0]:.2f}, Select={action_dist[1]:.2f}, Prioritize={action_dist[2]:.2f}")
+                    self.last_action_distribution = action_dist
             
             # Enhanced logging
             if len(self.rewards) % 50 == 0:
@@ -197,7 +202,9 @@ def train_dqn_with_curriculum(total_timesteps=300000):
             'mean_rewards': [float(x) for x in callback.mean_rewards],
             'episode_lengths': [int(x) for x in callback.episode_lengths],
             'efficiency_scores': [float(x) for x in callback.efficiency_scores],
-            'high_value_selections': [int(x) for x in callback.high_value_selections]
+            'high_value_selections': [int(x) for x in callback.high_value_selections],
+            # --- Save last action distribution ---
+            'last_action_distribution': getattr(callback, 'last_action_distribution', None)
         }
         
         with open(f"models/dqn/phase_{phase_idx + 1}_stats.json", 'w') as f:

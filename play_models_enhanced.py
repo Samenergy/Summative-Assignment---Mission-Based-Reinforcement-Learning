@@ -22,38 +22,36 @@ def load_reinforce_model(env, path):
 
 def get_model_predictions(model, obs, model_name):
     """Get model predictions and action probabilities"""
+    # Convert dict obs to flat array for model input
+    if isinstance(obs, dict):
+        obs_arr = np.array([obs['topic_relevance'], obs['sentiment'], obs['recency'], obs['company_match'], obs['time_pressure'], obs['quality_score']], dtype=np.float32)
+    else:
+        obs_arr = obs
     if model_name == "REINFORCE":
-        obs_tensor = torch.tensor(obs, dtype=torch.float32).unsqueeze(0)
+        obs_tensor = torch.tensor(obs_arr, dtype=torch.float32).unsqueeze(0)
         action, value, log_prob = model.forward(obs_tensor)
         action = action.item()
-        
         # Get action probabilities for REINFORCE
         with torch.no_grad():
             action_probs = torch.softmax(log_prob, dim=-1).squeeze().numpy()
-            # Ensure it's a list/array with 3 values
-            if action_probs.ndim == 0:  # If it's a scalar
+            if action_probs.ndim == 0:
                 action_probs = np.array([0.33, 0.33, 0.34])
-            elif len(action_probs) != 3:  # If it doesn't have 3 values
+            elif len(action_probs) != 3:
                 action_probs = np.array([0.33, 0.33, 0.34])
     else:
-        action, _ = model.predict(obs)
-        
-        # Get action probabilities for other models
+        action, _ = model.predict(obs_arr)
         if hasattr(model, 'policy'):
-            obs_tensor = torch.tensor(obs, dtype=torch.float32).unsqueeze(0)
+            obs_tensor = torch.tensor(obs_arr, dtype=torch.float32).unsqueeze(0)
             with torch.no_grad():
                 if hasattr(model.policy, 'get_distribution'):
                     dist = model.policy.get_distribution(obs_tensor)
                     action_probs = dist.distribution.probs.squeeze().numpy()
-                    # Ensure it's a list/array with 3 values
                     if action_probs.ndim == 0 or len(action_probs) != 3:
                         action_probs = np.array([0.33, 0.33, 0.34])
                 else:
-                    # Fallback for models without direct probability access
-                    action_probs = np.array([0.33, 0.33, 0.34])  # Equal probabilities
+                    action_probs = np.array([0.33, 0.33, 0.34])
         else:
             action_probs = np.array([0.33, 0.33, 0.34])
-    
     return action, action_probs
 
 def play_model_enhanced(env, model, model_name, num_episodes=2, max_steps_per_episode=10):
@@ -94,6 +92,11 @@ def play_model_enhanced(env, model, model_name, num_episodes=2, max_steps_per_ep
             
             # Take action
             obs, reward, done, _, _ = env.step(action)
+            # Flatten obs dict for logging/rendering
+            if isinstance(obs, dict):
+                obs_flat = [obs['topic_relevance'], obs['sentiment'], obs['recency'], obs['company_match'], obs['time_pressure'], obs['quality_score']]
+            else:
+                obs_flat = obs
             rewards.append(reward)
             steps += 1
             mean_reward = np.mean(rewards) if rewards else 0.0
@@ -107,7 +110,7 @@ def play_model_enhanced(env, model, model_name, num_episodes=2, max_steps_per_ep
                 action, 
                 model_name, 
                 episode_info, 
-                obs.tolist(),  # State values
+                obs_flat,  # State values
                 action_probs.tolist()  # Action probabilities
             )
             
@@ -123,7 +126,7 @@ def play_model_enhanced(env, model, model_name, num_episodes=2, max_steps_per_ep
             # Store detailed step information
             all_steps.append([
                 episode + 1, steps, action_names[action], reward, mean_reward,
-                str(obs.tolist()), str(action_probs.tolist())
+                str(obs_flat), str(action_probs.tolist())
             ])
             
             clock.tick(1)  # 1 FPS for clearer visualization

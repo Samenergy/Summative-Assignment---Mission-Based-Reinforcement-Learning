@@ -6,31 +6,82 @@ import pygame
 import numpy as np
 import csv
 import torch
+import torch.nn as nn
+import torch.nn.functional as F
 from stable_baselines3 import DQN, PPO, A2C
 from stable_baselines3.common.policies import ActorCriticPolicy
 from environment.custom_env import B2BNewsSelectionEnv
 from environment.fallback_rendering import render_enhanced_dashboard, close_enhanced_rendering
 
+class CustomReinforcePolicy(nn.Module):
+    def __init__(self, input_size, hidden_size, num_actions):
+        super(CustomReinforcePolicy, self).__init__()
+        # Main network (matches the saved model structure)
+        self.net = nn.Sequential(
+            nn.Linear(input_size, hidden_size),
+            nn.ReLU(),
+            nn.Linear(hidden_size, hidden_size),
+            nn.ReLU(),
+            nn.Linear(hidden_size, num_actions)
+        )
+        
+        # Value head (matches the saved model structure)
+        self.value_head = nn.Sequential(
+            nn.Linear(input_size, hidden_size),
+            nn.ReLU(),
+            nn.Linear(hidden_size, 1)
+        )
+    
+    def forward(self, x):
+        # Get action logits
+        action_logits = self.net(x)
+        # Get value
+        value = self.value_head(x)
+        # Get log probabilities
+        log_probs = F.log_softmax(action_logits, dim=-1)
+        
+        # Sample action
+        probs = F.softmax(action_logits, dim=-1)
+        action = torch.multinomial(probs, 1).item()
+        
+        return action, value, log_probs
+
 def load_reinforce_model(env, path):
-    policy = ActorCriticPolicy(
-        observation_space=env.observation_space,
-        action_space=env.action_space,
-        lr_schedule=lambda _: 0.001
+    # Calculate input size based on observation space
+    if hasattr(env.observation_space, 'spaces'):
+        # Dict observation space
+        input_size = sum(space.shape[0] for space in env.observation_space.spaces.values())
+    else:
+        # Box observation space
+        input_size = env.observation_space.shape[0]
+    
+    # Create custom policy with matching architecture
+    policy = CustomReinforcePolicy(
+        input_size=input_size,
+        hidden_size=64,  # Match the saved model's hidden size
+        num_actions=env.action_space.n
     )
+    
+    # Load the saved state dict
     policy.load_state_dict(torch.load(path))
+    policy.eval()  # Set to evaluation mode
     return policy
 
 def get_model_predictions(model, obs, model_name):
     """Get model predictions and action probabilities"""
-    # Convert dict obs to flat array for model input
-    if isinstance(obs, dict):
-        obs_arr = np.array([obs['topic_relevance'], obs['sentiment'], obs['recency'], obs['company_match'], obs['time_pressure'], obs['quality_score']], dtype=np.float32)
+    # Prepare observation for model input
+    if model_name in ["DQN", "PPO", "A2C"]:
+        # Pass the dict as-is (SB3 expects dict of arrays)
+        obs_input = {k: np.array(v, dtype=np.float32) for k, v in obs.items()}
+    elif model_name == "REINFORCE":
+        # Flatten for custom REINFORCE
+        obs_input = np.concatenate([np.array(v, dtype=np.float32).ravel() for v in obs.values()])
     else:
-        obs_arr = obs
+        obs_input = obs
     if model_name == "REINFORCE":
-        obs_tensor = torch.tensor(obs_arr, dtype=torch.float32).unsqueeze(0)
+        obs_tensor = torch.tensor(obs_input, dtype=torch.float32).unsqueeze(0)
         action, value, log_prob = model.forward(obs_tensor)
-        action = action.item()
+        # action is already an int from the forward method, no need to call .item()
         # Get action probabilities for REINFORCE
         with torch.no_grad():
             action_probs = torch.softmax(log_prob, dim=-1).squeeze().numpy()
@@ -39,14 +90,19 @@ def get_model_predictions(model, obs, model_name):
             elif len(action_probs) != 3:
                 action_probs = np.array([0.33, 0.33, 0.34])
     else:
-        action, _ = model.predict(obs_arr)
+        action, _ = model.predict(obs_input)
         if hasattr(model, 'policy'):
-            obs_tensor = torch.tensor(obs_arr, dtype=torch.float32).unsqueeze(0)
+            # Convert numpy arrays to PyTorch tensors for stable-baselines3
+            obs_dict = {k: torch.tensor(np.array(v, dtype=np.float32)).unsqueeze(0) for k, v in obs.items()}
             with torch.no_grad():
                 if hasattr(model.policy, 'get_distribution'):
-                    dist = model.policy.get_distribution(obs_tensor)
-                    action_probs = dist.distribution.probs.squeeze().numpy()
-                    if action_probs.ndim == 0 or len(action_probs) != 3:
+                    try:
+                        dist = model.policy.get_distribution(obs_dict)
+                        action_probs = dist.distribution.probs.squeeze().numpy()
+                        if action_probs.ndim == 0 or len(action_probs) != 3:
+                            action_probs = np.array([0.33, 0.33, 0.34])
+                    except Exception as e:
+                        print(f"Warning: Could not get action probabilities: {e}")
                         action_probs = np.array([0.33, 0.33, 0.34])
                 else:
                     action_probs = np.array([0.33, 0.33, 0.34])

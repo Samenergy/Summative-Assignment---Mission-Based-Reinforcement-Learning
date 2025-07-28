@@ -23,12 +23,12 @@ class B2BNewsSelectionEnv(gym.Env):
         
         # Enhanced observation space with more features
         self.observation_space = spaces.Dict({
-            'topic_relevance': spaces.Box(low=0, high=1, shape=(), dtype=np.float32),
-            'sentiment': spaces.Box(low=-1, high=1, shape=(), dtype=np.float32),
-            'recency': spaces.Box(low=0, high=1, shape=(), dtype=np.float32),
-            'company_match': spaces.Box(low=0, high=1, shape=(), dtype=np.float32),
-            'time_pressure': spaces.Box(low=0, high=1, shape=(), dtype=np.float32),
-            'quality_score': spaces.Box(low=0, high=1, shape=(), dtype=np.float32),
+            'topic_relevance': spaces.Box(low=0, high=1, shape=(1,), dtype=np.float32),
+            'sentiment': spaces.Box(low=-1, high=1, shape=(1,), dtype=np.float32),
+            'recency': spaces.Box(low=0, high=1, shape=(1,), dtype=np.float32),
+            'company_match': spaces.Box(low=0, high=1, shape=(1,), dtype=np.float32),
+            'time_pressure': spaces.Box(low=0, high=1, shape=(1,), dtype=np.float32),
+            'quality_score': spaces.Box(low=0, high=1, shape=(1,), dtype=np.float32),
         })
         
         # Action space: Skip (0), Select (1), Prioritize (2)
@@ -237,21 +237,21 @@ class B2BNewsSelectionEnv(gym.Env):
         """Get enhanced state representation as a dict"""
         if self.current_article_idx >= len(self.articles):
             return {
-                'topic_relevance': 0.0,
-                'sentiment': 0.0,
-                'recency': 0.0,
-                'company_match': 0.0,
-                'time_pressure': 0.0,
-                'quality_score': 0.0
+                'topic_relevance': np.array([0.0], dtype=np.float32),
+                'sentiment': np.array([0.0], dtype=np.float32),
+                'recency': np.array([0.0], dtype=np.float32),
+                'company_match': np.array([0.0], dtype=np.float32),
+                'time_pressure': np.array([0.0], dtype=np.float32),
+                'quality_score': np.array([0.0], dtype=np.float32)
             }
         article = self.articles[self.current_article_idx]
         state = {
-            'topic_relevance': float(article['topic_relevance']),
-            'sentiment': float(article['sentiment']),
-            'recency': float(article['recency']),
-            'company_match': float(article['company_match']),
-            'time_pressure': float(self.time_pressure),
-            'quality_score': float(article['quality_score'])
+            'topic_relevance': np.array([article['topic_relevance']], dtype=np.float32),
+            'sentiment': np.array([article['sentiment']], dtype=np.float32),
+            'recency': np.array([article['recency']], dtype=np.float32),
+            'company_match': np.array([article['company_match']], dtype=np.float32),
+            'time_pressure': np.array([self.time_pressure], dtype=np.float32),
+            'quality_score': np.array([article['quality_score']], dtype=np.float32)
         }
         return state
 

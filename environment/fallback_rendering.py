@@ -77,8 +77,13 @@ class SimpleNeuralNetworkVisualizer:
         for i in range(input_nodes):
             x_pos = self.x + 50
             y_pos = self.y + 30 + i * 35  # Adjusted spacing for 6 nodes
+            val = state_values[i] if i < len(state_values) else 0
+            if isinstance(val, np.ndarray):
+                val = float(val.squeeze())
+            else:
+                val = float(val)
             self.nodes.append({
-                'x': x_pos, 'y': y_pos, 'value': state_values[i] if i < len(state_values) else 0,
+                'x': x_pos, 'y': y_pos, 'value': val,
                 'layer': 0, 'type': 'input'
             })
         
@@ -97,8 +102,13 @@ class SimpleNeuralNetworkVisualizer:
         for i in range(output_nodes):
             x_pos = self.x + 250
             y_pos = self.y + 60 + i * 40
+            val = action_probs[i] if i < len(action_probs) else 0
+            if isinstance(val, np.ndarray):
+                val = float(val.squeeze())
+            else:
+                val = float(val)
             self.nodes.append({
-                'x': x_pos, 'y': y_pos, 'value': action_probs[i] if i < len(action_probs) else 0,
+                'x': x_pos, 'y': y_pos, 'value': val,
                 'layer': 2, 'type': 'output'
             })
         

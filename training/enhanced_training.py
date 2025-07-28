@@ -69,16 +69,51 @@ class EnhancedCallback(BaseCallback):
         
         return True
 
+class ReinforceMLPPolicy(nn.Module):
+    def __init__(self, input_dim, output_dim, hidden_dim=64):
+        super().__init__()
+        self.net = nn.Sequential(
+            nn.Linear(input_dim, hidden_dim),
+            nn.ReLU(),
+            nn.Linear(hidden_dim, hidden_dim),
+            nn.ReLU(),
+            nn.Linear(hidden_dim, output_dim)
+        )
+        self.value_head = nn.Sequential(
+            nn.Linear(input_dim, hidden_dim),
+            nn.ReLU(),
+            nn.Linear(hidden_dim, 1)
+        )
+    def forward(self, x):
+        logits = self.net(x)
+        value = self.value_head(x)
+        probs = torch.softmax(logits, dim=-1)
+        dist = torch.distributions.Categorical(probs)
+        action = dist.sample()
+        log_prob = dist.log_prob(action)
+        return action, value, log_prob
+
 class REINFORCE:
     """Enhanced REINFORCE implementation with curriculum learning support"""
     
+    @staticmethod
+    def flatten_obs(obs):
+        # obs is a dict of 1D arrays, e.g. {'a': array([x]), ...}
+        # Concatenate all values into a single 1D array
+        if isinstance(obs, dict):
+            return np.concatenate([v.ravel() for v in obs.values()]).astype(np.float32)
+        return np.array(obs, dtype=np.float32)
+    
     def __init__(self, env, learning_rate=0.0003, gamma=0.99, entropy_coef=0.01, num_episodes=15000):
         self.env = env
-        self.policy = ActorCriticPolicy(
-            observation_space=env.observation_space,
-            action_space=env.action_space,
-            lr_schedule=lambda _: learning_rate
-        )
+        # Determine input and output dimensions from env
+        sample_obs = env.reset()
+        if isinstance(sample_obs, (list, tuple)) and len(sample_obs) > 0:
+            sample_obs = sample_obs[0]
+        flat_obs = self.flatten_obs(sample_obs)
+        input_dim = flat_obs.shape[0]
+        output_dim = env.action_space.n
+        self.policy = ReinforceMLPPolicy(input_dim, output_dim)
         self.optimizer = torch.optim.Adam(self.policy.parameters(), lr=learning_rate, weight_decay=1e-5)
         self.gamma = gamma
         self.entropy_coef = entropy_coef
@@ -107,14 +142,13 @@ class REINFORCE:
             episode_rewards = []
             
             while not done:
-                # Handle observation format from DummyVecEnv
+                # Handle observation format from DummyVecEnv and flatten dict obs
                 if isinstance(obs, (list, tuple)) and len(obs) > 0:
-                    obs_array = obs[0] if isinstance(obs[0], np.ndarray) else np.array(obs[0])
+                    obs_array = self.flatten_obs(obs[0])
                 else:
-                    obs_array = np.array(obs) if obs is not None else np.zeros(6)
-                
+                    obs_array = self.flatten_obs(obs)
                 obs_tensor = torch.tensor(obs_array, dtype=torch.float32).unsqueeze(0)
-                action, value, log_prob = self.policy.forward(obs_tensor)
+                action, value, log_prob = self.policy(obs_tensor)
                 log_probs.append(log_prob)
                 # DummyVecEnv expects a list of actions
                 result = self.env.step([action.item()])
@@ -192,8 +226,9 @@ class REINFORCE:
     
     def predict(self, obs, deterministic=True):
         """Predict action for given observation"""
-        obs_tensor = torch.tensor(obs, dtype=torch.float32).unsqueeze(0)
-        action, _, _ = self.policy.forward(obs_tensor)
+        obs_array = self.flatten_obs(obs)
+        obs_tensor = torch.tensor(obs_array, dtype=torch.float32).unsqueeze(0)
+        action, _, _ = self.policy(obs_tensor)
         return action.item(), None
 
 class CurriculumLearning:

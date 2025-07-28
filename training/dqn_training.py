@@ -164,7 +164,7 @@ def train_dqn_with_curriculum(total_timesteps=300000):
         if phase_idx == 0:
             # First phase - create new model
             params = AdaptiveHyperparameters.get_dqn_params(0.5)
-            model = DQN("MlpPolicy", env, verbose=1, **params)
+            model = DQN("MultiInputPolicy", env, verbose=1, **params)
         else:
             # Continue training existing model
             model.set_env(env)

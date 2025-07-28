@@ -59,20 +59,16 @@ class EnhancedEvaluator:
             episode_qualities = []
             
             for step in range(self.max_steps_per_episode):
-                # Convert dict obs to flat array for model input
-                if isinstance(obs, dict):
-                    obs_arr = np.array([
-                        obs['topic_relevance'],
-                        obs['sentiment'],
-                        obs['recency'],
-                        obs['company_match'],
-                        obs['time_pressure'],
-                        obs['quality_score']
-                    ], dtype=np.float32)
+                # Prepare observation for model.predict
+                if model_name in ["DQN", "PPO", "A2C"]:
+                    # Pass the dict as-is (SB3 expects dict of arrays)
+                    obs_input = {k: np.array(v, dtype=np.float32) for k, v in obs.items()}
+                elif model_name == "REINFORCE":
+                    # Flatten for custom REINFORCE
+                    obs_input = np.concatenate([np.array(v, dtype=np.float32).ravel() for v in obs.values()])
                 else:
-                    obs_arr = obs
-                # Get model prediction
-                action, _ = model.predict(obs_arr, deterministic=True)
+                    obs_input = obs
+                action, _ = model.predict(obs_input, deterministic=True)
                 # Convert action to int if it's a numpy array
                 if isinstance(action, np.ndarray):
                     action = int(action.item())
@@ -130,11 +126,11 @@ class EnhancedEvaluator:
         
         for model_name, model_path in model_paths.items():
             if model_name == "DQN":
-                model = DQN("MlpPolicy", B2BNewsSelectionEnv())
+                model = DQN("MultiInputPolicy", B2BNewsSelectionEnv())
             elif model_name == "PPO":
-                model = PPO("MlpPolicy", B2BNewsSelectionEnv())
+                model = PPO("MultiInputPolicy", B2BNewsSelectionEnv())
             elif model_name == "A2C":
-                model = A2C("MlpPolicy", B2BNewsSelectionEnv())
+                model = A2C("MultiInputPolicy", B2BNewsSelectionEnv())
             elif model_name == "REINFORCE":
                 # REINFORCE needs special handling
                 from training.enhanced_training import REINFORCE

@@ -1,0 +1,10 @@
+{
+  "model_type": "REINFORCE",
+  "total_episodes": 45000,
+  "best_mean_reward": 45.576534271240234,
+  "final_mean_reward": 43.04954528808594,
+  "avg_episode_length": 16.333333333333332,
+  "avg_efficiency": 0.0,
+  "total_high_value_selections": 0,
+  "training_date": "2025-07-29T18:12:46.915296"
+}

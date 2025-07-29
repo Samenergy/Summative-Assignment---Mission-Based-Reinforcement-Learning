@@ -62,12 +62,13 @@ class B2BNewsSelectionEnv(gym.Env):
         
         # Time pressure mechanism
         self.time_pressure = 1.0  # Decreases over time
-        # --- Action distribution tracking ---
+        # Action distribution tracking
         self.action_counts = [0, 0, 0]  # [Skip, Select, Prioritize]
         
     def _generate_enhanced_articles(self):
         """Generate more diverse and realistic articles"""
         articles = []
+        qualities = []
         
         # Enhanced topics with better categorization
         topics = [
@@ -87,7 +88,6 @@ class B2BNewsSelectionEnv(gym.Env):
         ]
         
         for i in range(self.max_articles):
-            # Enhanced article generation with better quality distribution
             topic = random.choice(topics)
             company = random.choice(companies)
             
@@ -99,16 +99,20 @@ class B2BNewsSelectionEnv(gym.Env):
             recency = max(0.1, 1.0 - (i * 0.05) + random.gauss(0, 0.1))
             recency = np.clip(recency, 0, 1)
             
-            # Calculate topic relevance more intelligently
+            # Calculate topic relevance
             topic_relevance = self._calculate_topic_relevance(topic)
             
             # Calculate company match
             company_match = 1.0 if company in self.target_companies else 0.3
             
-            # Enhanced article quality score
-            quality_score = (topic_relevance + company_match + (sentiment + 1) / 2 + recency) / 4
+            # Enhanced article quality score with balanced distribution
+            quality_score = np.clip(
+                (topic_relevance + company_match + (sentiment + 1) / 2 + recency) / 4 +
+                random.gauss(0, 0.1), 0, 1
+            )
+            qualities.append(quality_score)
             
-            # Generate more realistic titles and summaries
+            # Generate realistic titles and summaries
             title = self._generate_title(topic, company, sentiment)
             summary = self._generate_summary(topic, company, sentiment)
             
@@ -125,6 +129,9 @@ class B2BNewsSelectionEnv(gym.Env):
                 'quality_score': quality_score
             })
         
+        # Log quality distribution for debugging
+        print(f"Article Quality Stats: Mean={np.mean(qualities):.2f}, Std={np.std(qualities):.2f}, "
+              f"Min={np.min(qualities):.2f}, Max={np.max(qualities):.2f}")
         return articles
     
     def _calculate_topic_relevance(self, topic):
@@ -184,53 +191,63 @@ class B2BNewsSelectionEnv(gym.Env):
     def _calculate_enhanced_reward(self, action, article):
         """Calculate enhanced reward based on action and article quality"""
         base_reward = 0.0
+        quality = article['quality_score']
+        sentiment = article['sentiment']
+        company_match = article['company_match']
+        recency = article['recency']
         
         if action == 0:  # Skip
-            # Reward for skipping low-quality articles
-            if article['quality_score'] < 0.4:
-                base_reward = 0.3
-            elif article['quality_score'] > 0.7:
-                base_reward = -0.3  # Penalty for missing high-quality articles
+            if quality < 0.4:  # Reward for skipping low-quality articles
+                base_reward = 0.8 + recency * 0.3  # Increased reward
+                if sentiment < -0.3:  # Bonus for skipping negative sentiment
+                    base_reward += 0.5
+            elif quality > 0.7:  # Penalty for missing high-quality articles
+                base_reward = -0.5 * quality
+                self.episode_stats['missed_opportunities'] += 1
             else:
-                base_reward = 0.1
+                base_reward = 0.2  # Neutral reward for skipping medium-quality
                 
         elif action == 1:  # Select
-            # Reward based on article quality
-            quality_bonus = article['quality_score'] * 1.5
-            company_bonus = article['company_match'] * 0.5
-            sentiment_bonus = max(0, article['sentiment']) * 0.3
-            recency_bonus = article['recency'] * 0.2
-            
+            # Reward based on quality, sentiment, and company match
+            quality_bonus = quality * 1.8  # Increased from 1.5
+            company_bonus = company_match * 0.7  # Increased from 0.5
+            sentiment_bonus = max(0, sentiment) * 0.5  # Increased from 0.3
+            recency_bonus = recency * 0.4  # Increased from 0.2
             base_reward = quality_bonus + company_bonus + sentiment_bonus + recency_bonus
             
             # Bonus for high-value selections
-            if article['quality_score'] > 0.8:
-                base_reward += 0.5
+            if quality > 0.8:
+                base_reward += 0.7  # Increased from 0.5
                 self.episode_stats['high_value_selections'] += 1
+            if sentiment > 0.5:  # Additional bonus for positive sentiment
+                base_reward += 0.3
                 
         elif action == 2:  # Prioritize
-            # Higher rewards for prioritizing high-quality articles
-            quality_bonus = article['quality_score'] * 2.0
-            company_bonus = article['company_match'] * 0.8
-            sentiment_bonus = max(0, article['sentiment']) * 0.5
-            recency_bonus = article['recency'] * 0.4
-            
-            base_reward = quality_bonus + company_bonus + sentiment_bonus + recency_bonus
-            
-            # High bonus for prioritizing excellent articles
-            if article['quality_score'] > 0.9:
-                base_reward += 1.0
-                self.episode_stats['high_value_selections'] += 2
-            elif article['quality_score'] > 0.7:
-                base_reward += 0.5
-                self.episode_stats['high_value_selections'] += 1
-            else:
-                base_reward -= 0.2  # Penalty for prioritizing low-quality articles
+            if quality > 0.7:  # Reward for prioritizing high-quality articles
+                quality_bonus = quality * 1.5  # Reduced from 2.0
+                company_bonus = company_match * 0.6  # Reduced from 0.8
+                sentiment_bonus = max(0, sentiment) * 0.4  # Reduced from 0.5
+                recency_bonus = recency * 0.3  # Reduced from 0.4
+                base_reward = min(3.0, quality_bonus + company_bonus + sentiment_bonus + recency_bonus)  # Cap reward
+                if quality > 0.9:
+                    base_reward += 0.8  # Reduced from 1.0
+                    self.episode_stats['high_value_selections'] += 2
+                elif quality > 0.7:
+                    base_reward += 0.4  # Reduced from 0.5
+                    self.episode_stats['high_value_selections'] += 1
+            else:  # Stronger penalty for prioritizing low-quality articles
+                base_reward = -0.5 * (1 - quality)  # Increased from -0.2
         
         # Time pressure adjustment
         time_factor = 1.0 + (1.0 - self.time_pressure) * 0.5
         base_reward *= time_factor
         
+        # Per-step diversity incentive
+        total_actions = sum(self.action_counts) + 1  # Avoid division by zero
+        action_dist = [c / total_actions for c in self.action_counts]
+        if action_dist[action] < 0.2:  # Bonus for underrepresented actions
+            base_reward += 0.3
+            
         return base_reward
     
     def _get_enhanced_state(self):
@@ -260,14 +277,14 @@ class B2BNewsSelectionEnv(gym.Env):
         if self.current_article_idx >= len(self.articles):
             return self._get_enhanced_state(), 0, True, False, {}
         article = self.articles[self.current_article_idx]
-        # --- Track actions ---
+        # Track actions
         self.action_counts[action] += 1
-        # --- Per-step penalty for 'Prioritize' overuse ---
+        # Stronger penalty for 'Prioritize' overuse
         total_so_far = sum(self.action_counts)
         prioritize_ratio = self.action_counts[2] / max(1, total_so_far)
         penalty = 0.0
-        if action == 2 and prioritize_ratio > 0.3:
-            penalty = -0.2
+        if action == 2 and prioritize_ratio > 0.25:  # Lowered threshold from 0.3
+            penalty = -0.5 * prioritize_ratio  # Dynamic penalty
         # Calculate enhanced reward
         reward = self._calculate_enhanced_reward(action, article) + penalty
         self.total_reward += reward
@@ -283,9 +300,9 @@ class B2BNewsSelectionEnv(gym.Env):
         # Check if episode is done
         done = self.current_article_idx >= len(self.articles)
         if done:
-            # --- Diversity bonus if all actions used ---
+            # Diversity bonus if all actions used
             if all(c > 0 for c in self.action_counts):
-                reward += 1.0
+                reward += 1.5  # Increased from 1.0
             # Calculate efficiency score
             total_high_quality = sum(1 for a in self.articles if a['quality_score'] > 0.7)
             selected_high_quality = sum(1 for a in self.selected_articles + self.prioritized_articles 
@@ -302,7 +319,8 @@ class B2BNewsSelectionEnv(gym.Env):
             'quality_score': article['quality_score'],
             'efficiency_score': self.episode_stats['efficiency_score'],
             'high_value_selections': self.episode_stats['high_value_selections'],
-            'time_pressure': self.time_pressure
+            'time_pressure': self.time_pressure,
+            'action_distribution': self.get_action_distribution()
         }
         return self._get_enhanced_state(), reward, done, False, info
     
@@ -314,7 +332,7 @@ class B2BNewsSelectionEnv(gym.Env):
         self.selected_articles = []
         self.prioritized_articles = []
         self.time_pressure = 1.0
-        # --- Reset action distribution ---
+        # Reset action distribution
         self.action_counts = [0, 0, 0]
         # Reset episode stats
         self.episode_stats = {

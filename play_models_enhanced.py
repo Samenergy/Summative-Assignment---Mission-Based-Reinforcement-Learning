@@ -78,36 +78,80 @@ def get_model_predictions(model, obs, model_name):
         obs_input = np.concatenate([np.array(v, dtype=np.float32).ravel() for v in obs.values()])
     else:
         obs_input = obs
+    
     if model_name == "REINFORCE":
         obs_tensor = torch.tensor(obs_input, dtype=torch.float32).unsqueeze(0)
-        action, value, log_prob = model.forward(obs_tensor)
-        # action is already an int from the forward method, no need to call .item()
-        # Get action probabilities for REINFORCE
         with torch.no_grad():
-            action_probs = torch.softmax(log_prob, dim=-1).squeeze().numpy()
+            # Get action logits from the network
+            action_logits = model.net(obs_tensor)
+            action_probs = torch.softmax(action_logits, dim=-1).squeeze().numpy()
+            
+            # Sample action based on probabilities
+            action = torch.multinomial(torch.softmax(action_logits, dim=-1), 1).item()
+            
+            # Ensure proper shape
             if action_probs.ndim == 0:
                 action_probs = np.array([0.33, 0.33, 0.34])
             elif len(action_probs) != 3:
                 action_probs = np.array([0.33, 0.33, 0.34])
-    else:
-        action, _ = model.predict(obs_input)
-        if hasattr(model, 'policy'):
-            # Convert numpy arrays to PyTorch tensors for stable-baselines3
-            obs_dict = {k: torch.tensor(np.array(v, dtype=np.float32)).unsqueeze(0) for k, v in obs.items()}
-            with torch.no_grad():
-                if hasattr(model.policy, 'get_distribution'):
-                    try:
-                        dist = model.policy.get_distribution(obs_dict)
-                        action_probs = dist.distribution.probs.squeeze().numpy()
-                        if action_probs.ndim == 0 or len(action_probs) != 3:
-                            action_probs = np.array([0.33, 0.33, 0.34])
-                    except Exception as e:
-                        print(f"Warning: Could not get action probabilities: {e}")
-                        action_probs = np.array([0.33, 0.33, 0.34])
+    
+    elif model_name == "DQN":
+        # For DQN, get Q-values and convert to action probabilities
+        action, _ = model.predict(obs_input, deterministic=False)
+        
+        # Get Q-values for probability estimation
+        with torch.no_grad():
+            # Convert obs to tensor format expected by DQN
+            obs_tensor = {}
+            for key, value in obs_input.items():
+                obs_tensor[key] = torch.tensor(value, dtype=torch.float32).unsqueeze(0)
+            
+            # Get Q-values from the model
+            q_values = model.q_net(obs_tensor)
+            
+            # Convert Q-values to probabilities using softmax with temperature
+            temperature = 1.0
+            action_probs = torch.softmax(q_values / temperature, dim=-1).squeeze().numpy()
+            
+            if action_probs.ndim == 0 or len(action_probs) != 3:
+                action_probs = np.array([0.33, 0.33, 0.34])
+    
+    else:  # PPO, A2C
+        action, _ = model.predict(obs_input, deterministic=False)
+        
+        # Get action probabilities from the policy
+        with torch.no_grad():
+            try:
+                # Convert observation to tensor format
+                obs_tensor = {}
+                for key, value in obs_input.items():
+                    obs_tensor[key] = torch.tensor(value, dtype=torch.float32).unsqueeze(0)
+                
+                # Get features from the policy network
+                features = model.policy.extract_features(obs_tensor)
+                
+                # Get action distribution
+                if hasattr(model.policy, 'action_net'):
+                    action_logits = model.policy.action_net(features)
+                elif hasattr(model.policy, '_get_action_dist_from_latent'):
+                    action_dist = model.policy._get_action_dist_from_latent(features)
+                    action_logits = action_dist.distribution.logits
                 else:
+                    # Fallback: try to get distribution directly
+                    action_dist = model.policy.get_distribution(obs_tensor)
+                    action_logits = action_dist.distribution.logits
+                
+                # Convert logits to probabilities
+                action_probs = torch.softmax(action_logits, dim=-1).squeeze().numpy()
+                
+                if action_probs.ndim == 0 or len(action_probs) != 3:
                     action_probs = np.array([0.33, 0.33, 0.34])
-        else:
-            action_probs = np.array([0.33, 0.33, 0.34])
+                    
+            except Exception as e:
+                print(f"Warning: Could not get action probabilities for {model_name}: {e}")
+                # Fallback: estimate probabilities based on action selection
+                action_probs = np.array([0.1, 0.1, 0.8]) if action == 2 else np.array([0.33, 0.33, 0.34])
+    
     return action, action_probs
 
 def play_model_enhanced(env, model, model_name, num_episodes=2, max_steps_per_episode=10):

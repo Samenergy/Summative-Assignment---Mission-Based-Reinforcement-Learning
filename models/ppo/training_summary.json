@@ -1,0 +1,10 @@
+{
+  "model_type": "PPO",
+  "total_episodes": 3788,
+  "best_mean_reward": 7.327499866485596,
+  "final_mean_reward": 5.847238540649414,
+  "avg_episode_length": 1.0,
+  "avg_efficiency": 0.9142027455121436,
+  "total_high_value_selections": 9262,
+  "training_date": "2025-07-30T01:01:47.141546"
+}

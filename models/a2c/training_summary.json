@@ -1,0 +1,10 @@
+{
+  "model_type": "A2C",
+  "total_episodes": 3750,
+  "best_mean_reward": 6.5495405197143555,
+  "final_mean_reward": 5.608618259429932,
+  "avg_episode_length": 1.0,
+  "avg_efficiency": 0.9136,
+  "total_high_value_selections": 8039,
+  "training_date": "2025-07-30T01:03:51.593924"
+}

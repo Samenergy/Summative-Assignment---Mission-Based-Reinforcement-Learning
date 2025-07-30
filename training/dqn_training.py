@@ -58,7 +58,7 @@ class EnhancedCallback(BaseCallback):
                     print(f"  Action Distribution: Skip={action_dist[0]:.2f}, Select={action_dist[1]:.2f}, Prioritize={action_dist[2]:.2f}")
                     self.last_action_distribution = action_dist
             
-            # Enhanced logging
+            # Enhanced logging with performance tracking
             if len(self.rewards) % 50 == 0:
                 print(f"Episode {len(self.rewards)}:")
                 print(f"  Mean Reward (last 100): {current_mean:.3f}")
@@ -66,6 +66,13 @@ class EnhancedCallback(BaseCallback):
                 print(f"  Avg Episode Length: {np.mean(self.episode_lengths[-100:]):.1f}")
                 if self.efficiency_scores:
                     print(f"  Avg Efficiency: {np.mean(self.efficiency_scores[-100:]):.3f}")
+                
+                # Track training statistics for adaptive learning
+                if hasattr(self.model, 'learning_rate'):
+                    self.training_stats['learning_rate'].append(self.model.learning_rate)
+                if hasattr(self.model, 'exploration_rate'):
+                    self.training_stats['exploration_rate'].append(self.model.exploration_rate)
+                
                 print("=" * 50)
         
         return True
@@ -105,17 +112,17 @@ class AdaptiveHyperparameters:
     
     @staticmethod
     def get_dqn_params(performance_ratio):
-        """Get DQN parameters based on performance"""
-        base_lr = 0.0001
-        base_exploration = 0.2
+        """Get DQN parameters based on performance - Enhanced for better performance"""
+        base_lr = 0.0003  # Increased from 0.0001 for faster learning
+        base_exploration = 0.3  # Increased from 0.2 for better exploration
         
         # Adjust learning rate based on performance
         if performance_ratio < 0.3:
-            lr = base_lr * 2.0  # Increase learning rate for poor performance
-            exploration = base_exploration * 1.5  # More exploration
+            lr = base_lr * 2.5  # More aggressive learning for poor performance
+            exploration = base_exploration * 2.0  # Much more exploration
         elif performance_ratio > 0.8:
-            lr = base_lr * 0.5  # Decrease learning rate for good performance
-            exploration = base_exploration * 0.7  # Less exploration
+            lr = base_lr * 0.7  # Less aggressive reduction
+            exploration = base_exploration * 0.5  # Moderate exploration reduction
         else:
             lr = base_lr
             exploration = base_exploration
@@ -123,15 +130,18 @@ class AdaptiveHyperparameters:
         return {
             'learning_rate': lr,
             'exploration_fraction': exploration,
-            'exploration_final_eps': 0.01,
-            'batch_size': 64,
-            'buffer_size': 50000,
-            'train_freq': 4,
-            'gradient_steps': 1,
-            'target_update_interval': 1000,
-            'learning_starts': 1000,
+            'exploration_final_eps': 0.03,  # Even higher for better exploration
+            'batch_size': 256,  # Larger batch for better stability
+            'buffer_size': 200000,  # Much larger buffer size
+            'train_freq': 1,  # Train every step for faster learning
+            'gradient_steps': 4,  # More gradient steps per update
+            'target_update_interval': 250,  # Much more frequent target updates
+            'learning_starts': 250,  # Start learning even earlier
             'gamma': 0.99,
-            'tau': 1.0
+            'tau': 0.9,  # Lower for more stable learning
+            'policy_kwargs': {
+                'net_arch': [512, 256, 128]  # Much larger network for better capacity
+            }
         }
 
 def train_dqn_with_curriculum(total_timesteps=300000):
@@ -143,18 +153,19 @@ def train_dqn_with_curriculum(total_timesteps=300000):
     # Initialize curriculum learning
     curriculum = CurriculumLearning(B2BNewsSelectionEnv)
     
-    # Training phases
+    # Training phases - Balanced for fair comparison
     phases = [
-        {"timesteps": total_timesteps // 3, "difficulty": 0.3},
-        {"timesteps": total_timesteps // 3, "difficulty": 0.6},
-        {"timesteps": total_timesteps // 3, "difficulty": 1.0}
+        {"timesteps": total_timesteps // 4, "difficulty": 0.2},  # Easier start
+        {"timesteps": total_timesteps // 4, "difficulty": 0.5},  # Medium difficulty
+        {"timesteps": total_timesteps // 4, "difficulty": 0.8},  # Hard difficulty
+        {"timesteps": total_timesteps // 4, "difficulty": 1.0}   # Full difficulty
     ]
     
     best_model = None
     best_performance = -np.inf
     
     for phase_idx, phase in enumerate(phases):
-        print(f"\n📚 Phase {phase_idx + 1}/3 - Difficulty: {phase['difficulty']:.1f}")
+        print(f"\n📚 Phase {phase_idx + 1}/4 - Difficulty: {phase['difficulty']:.1f}")
         print(f"⏱️  Training for {phase['timesteps']} timesteps")
         
         # Create environment for this phase
@@ -291,3 +302,11 @@ if __name__ == "__main__":
     print(f"\n🎉 DQN Training Complete!")
     print(f"📁 Model saved in: models/dqn/")
     print(f"📊 Report saved for DQN")
+    
+    # Performance summary
+    print(f"\n🏆 DQN Performance Summary:")
+    print(f"{'='*40}")
+    print(f"Best Mean Reward: {callback.best_mean_reward:.3f}")
+    print(f"Final Mean Reward: {callback.mean_rewards[-1] if callback.mean_rewards else 0:.3f}")
+    print(f"Average Efficiency: {np.mean(callback.efficiency_scores) if callback.efficiency_scores else 0:.3f}")
+    print(f"Total Episodes: {len(callback.rewards)}")

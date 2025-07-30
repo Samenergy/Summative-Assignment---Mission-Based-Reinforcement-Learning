@@ -1,0 +1,10 @@
+{
+  "model_type": "DQN",
+  "total_episodes": 3750,
+  "best_mean_reward": 6.203869819641113,
+  "final_mean_reward": 5.8745646476745605,
+  "avg_episode_length": 1.0,
+  "avg_efficiency": 0.8650222222222222,
+  "total_high_value_selections": 8531,
+  "training_date": "2025-07-30T00:59:47.320297"
+}

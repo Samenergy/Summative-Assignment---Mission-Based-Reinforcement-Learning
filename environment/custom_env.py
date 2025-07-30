@@ -198,25 +198,25 @@ class B2BNewsSelectionEnv(gym.Env):
         
         if action == 0:  # Skip
             if quality < 0.5:  # Increased threshold from 0.4
-                base_reward = 1.0 + recency * 0.4 + abs(min(0, sentiment)) * 0.6  # Stronger reward for low quality, negative sentiment
+                base_reward = 1.2 + recency * 0.5 + abs(min(0, sentiment)) * 0.7  # Even stronger reward for low quality, negative sentiment
             elif quality > 0.75:  # Reduced penalty for high-quality
-                base_reward = -0.3 * quality
+                base_reward = -0.25 * quality  # Slightly reduced penalty
                 self.episode_stats['missed_opportunities'] += 1
             else:
-                base_reward = 0.3  # Neutral reward for medium-quality
+                base_reward = 0.4  # Slightly higher neutral reward for medium-quality
                 
         elif action == 1:  # Select
-            # Reduced rewards to balance with other actions
-            quality_bonus = quality * 1.5  # Reduced from 1.8
-            company_bonus = company_match * 0.6  # Reduced from 0.7
-            sentiment_bonus = max(0, sentiment) * 0.6  # Increased from 0.5
-            recency_bonus = recency * 0.5  # Increased from 0.4
+            # Balanced rewards for fair comparison across algorithms
+            quality_bonus = quality * 1.6  # Slightly increased for better balance
+            company_bonus = company_match * 0.65  # Slightly increased
+            sentiment_bonus = max(0, sentiment) * 0.65  # Slightly increased
+            recency_bonus = recency * 0.55  # Slightly increased
             base_reward = quality_bonus + company_bonus + sentiment_bonus + recency_bonus
             if quality > 0.8:
-                base_reward += 0.6  # Reduced from 0.7
+                base_reward += 0.7  # Slightly increased
                 self.episode_stats['high_value_selections'] += 1
             if sentiment > 0.5:
-                base_reward += 0.4  # Increased from 0.3
+                base_reward += 0.45  # Slightly increased
                 
         elif action == 2:  # Prioritize
             if quality > 0.75:  # Increased threshold from 0.7

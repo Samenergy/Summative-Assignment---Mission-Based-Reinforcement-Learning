@@ -56,7 +56,7 @@ class EnhancedCallback(BaseCallback):
                 self.efficiency_scores.append(info.get('efficiency_score', 0))
                 self.high_value_selections.append(info.get('high_value_selections', 0))
             
-            # Enhanced logging
+            # Enhanced logging with performance tracking
             if len(self.rewards) % 50 == 0:
                 print(f"Episode {len(self.rewards)}:")
                 print(f"  Mean Reward (last 100): {current_mean:.3f}")
@@ -64,32 +64,56 @@ class EnhancedCallback(BaseCallback):
                 print(f"  Avg Episode Length: {np.mean(self.episode_lengths[-100:]):.1f}")
                 if self.efficiency_scores:
                     print(f"  Avg Efficiency: {np.mean(self.efficiency_scores[-100:]):.3f}")
+                
+                # Track training statistics for adaptive learning
+                if hasattr(self.model, 'learning_rate'):
+                    self.training_stats['learning_rate'].append(self.model.learning_rate)
+                if hasattr(self.model, 'ent_coef'):
+                    self.training_stats['exploration_rate'].append(self.model.ent_coef)
+                
                 print("=" * 50)
         
         return True
 
 class ReinforceMLPPolicy(nn.Module):
-    def __init__(self, input_dim, output_dim, hidden_dim=64):
+    def __init__(self, input_dim, output_dim, hidden_dim=128):  # Increased from 64
         super().__init__()
-        self.net = nn.Sequential(
+        # Enhanced policy network with larger capacity
+        self.policy_net = nn.Sequential(
             nn.Linear(input_dim, hidden_dim),
             nn.ReLU(),
+            nn.Dropout(0.1),  # Add dropout for regularization
             nn.Linear(hidden_dim, hidden_dim),
             nn.ReLU(),
-            nn.Linear(hidden_dim, output_dim)
+            nn.Dropout(0.1),
+            nn.Linear(hidden_dim, hidden_dim // 2),
+            nn.ReLU(),
+            nn.Linear(hidden_dim // 2, output_dim)
         )
-        self.value_head = nn.Sequential(
+        
+        # Enhanced value network
+        self.value_net = nn.Sequential(
             nn.Linear(input_dim, hidden_dim),
             nn.ReLU(),
-            nn.Linear(hidden_dim, 1)
+            nn.Dropout(0.1),
+            nn.Linear(hidden_dim, hidden_dim // 2),
+            nn.ReLU(),
+            nn.Linear(hidden_dim // 2, 1)
         )
+        
     def forward(self, x):
-        logits = self.net(x)
-        value = self.value_head(x)
+        logits = self.policy_net(x)
+        value = self.value_net(x)
+        
+        # Add temperature scaling for better exploration
+        temperature = 1.0
+        logits = logits / temperature
+        
         probs = torch.softmax(logits, dim=-1)
         dist = torch.distributions.Categorical(probs)
         action = dist.sample()
         log_prob = dist.log_prob(action)
+        
         return action, value, log_prob
 
 class REINFORCE:
@@ -265,14 +289,14 @@ class AdaptiveHyperparameters:
     
     @staticmethod
     def get_ppo_params(performance_ratio):
-        """Get PPO parameters based on performance"""
-        base_lr = 0.0003
+        """Get PPO parameters based on performance - Balanced for fair comparison"""
+        base_lr = 0.00025  # Slightly reduced from 0.0003
         
         if performance_ratio < 0.3:
-            lr = base_lr * 1.5
+            lr = base_lr * 1.3  # Less aggressive increase
             n_steps = 1024  # Smaller batches for faster updates
         elif performance_ratio > 0.8:
-            lr = base_lr * 0.7
+            lr = base_lr * 0.8  # Less aggressive reduction
             n_steps = 4096  # Larger batches for stability
         else:
             lr = base_lr
@@ -282,26 +306,29 @@ class AdaptiveHyperparameters:
             'learning_rate': lr,
             'n_steps': n_steps,
             'batch_size': 64,
-            'n_epochs': 10,
+            'n_epochs': 8,  # Reduced from 10 for faster training
             'gamma': 0.99,
             'gae_lambda': 0.95,
             'clip_range': 0.2,
-            'ent_coef': 0.01,
+            'ent_coef': 0.015,  # Slightly increased for more exploration
             'vf_coef': 0.5,
             'max_grad_norm': 0.5,
-            'target_kl': 0.01
+            'target_kl': 0.015,  # Slightly increased
+            'policy_kwargs': {
+                'net_arch': [dict(pi=[128, 128], vf=[128, 128])]  # Balanced architecture
+            }
         }
     
     @staticmethod
     def get_a2c_params(performance_ratio):
-        """Get A2C parameters based on performance"""
-        base_lr = 0.0007
+        """Get A2C parameters based on performance - Balanced for fair comparison"""
+        base_lr = 0.0006  # Slightly reduced from 0.0007
         
         if performance_ratio < 0.3:
-            lr = base_lr * 1.3
+            lr = base_lr * 1.2  # Less aggressive increase
             n_steps = 3  # More frequent updates
         elif performance_ratio > 0.8:
-            lr = base_lr * 0.8
+            lr = base_lr * 0.85  # Less aggressive reduction
             n_steps = 8  # Less frequent updates
         else:
             lr = base_lr
@@ -312,33 +339,39 @@ class AdaptiveHyperparameters:
             'n_steps': n_steps,
             'gamma': 0.99,
             'gae_lambda': 0.95,
-            'ent_coef': 0.01,
+            'ent_coef': 0.015,  # Slightly increased for more exploration
             'vf_coef': 0.25,
             'max_grad_norm': 0.5,
             'rms_prop_eps': 1e-5,
-            'use_rms_prop': True
+            'use_rms_prop': True,
+            'policy_kwargs': {
+                'net_arch': [dict(pi=[128, 128], vf=[128, 128])]  # Balanced architecture
+            }
         }
     
     @staticmethod
     def get_reinforce_params(performance_ratio):
-        """Get REINFORCE parameters based on performance"""
-        base_lr = 0.0003
+        """Get REINFORCE parameters based on performance - Enhanced for better performance"""
+        base_lr = 0.0005  # Increased from 0.0003 for faster learning
         
         if performance_ratio < 0.3:
-            lr = base_lr * 1.5  # Increase learning rate for poor performance
-            num_episodes = 20000  # More episodes for learning
+            lr = base_lr * 2.0  # More aggressive learning for poor performance
+            num_episodes = 25000  # More episodes for learning
+            entropy_coef = 0.05  # Higher entropy for more exploration
         elif performance_ratio > 0.8:
-            lr = base_lr * 0.7  # Decrease learning rate for good performance
-            num_episodes = 10000  # Fewer episodes for fine-tuning
+            lr = base_lr * 0.8  # Less aggressive reduction
+            num_episodes = 12000  # Moderate reduction in episodes
+            entropy_coef = 0.005  # Lower entropy for exploitation
         else:
             lr = base_lr
-            num_episodes = 15000
+            num_episodes = 18000  # Increased base episodes
+            entropy_coef = 0.02  # Moderate entropy
         
         return {
             'learning_rate': lr,
             'num_episodes': num_episodes,
             'gamma': 0.99,
-            'entropy_coef': 0.01
+            'entropy_coef': entropy_coef
         }
 
 def train_policy_gradient_with_curriculum(model_type="PPO", total_timesteps=300000):
@@ -350,18 +383,19 @@ def train_policy_gradient_with_curriculum(model_type="PPO", total_timesteps=3000
     # Initialize curriculum learning
     curriculum = CurriculumLearning(B2BNewsSelectionEnv)
     
-    # Training phases
+    # Training phases - Balanced for fair comparison
     phases = [
-        {"timesteps": total_timesteps // 3, "difficulty": 0.3},
-        {"timesteps": total_timesteps // 3, "difficulty": 0.6},
-        {"timesteps": total_timesteps // 3, "difficulty": 1.0}
+        {"timesteps": total_timesteps // 4, "difficulty": 0.2},  # Easier start
+        {"timesteps": total_timesteps // 4, "difficulty": 0.5},  # Medium difficulty
+        {"timesteps": total_timesteps // 4, "difficulty": 0.8},  # Hard difficulty
+        {"timesteps": total_timesteps // 4, "difficulty": 1.0}   # Full difficulty
     ]
     
     best_model = None
     best_performance = -np.inf
     
     for phase_idx, phase in enumerate(phases):
-        print(f"\n📚 Phase {phase_idx + 1}/3 - Difficulty: {phase['difficulty']:.1f}")
+        print(f"\n📚 Phase {phase_idx + 1}/4 - Difficulty: {phase['difficulty']:.1f}")
         print(f"⏱️  Training for {phase['timesteps']} timesteps")
         
         # Create environment for this phase
@@ -547,3 +581,13 @@ if __name__ == "__main__":
     print(f"\n🎉 All Policy Gradient Training Complete!")
     print(f"📁 Models saved in: models/")
     print(f"📊 Reports saved for each model")
+    
+    # Performance comparison summary
+    print(f"\n🏆 Performance Comparison Summary:")
+    print(f"{'='*50}")
+    print(f"{'Model':<12} {'Best Reward':<12} {'Final Reward':<12} {'Efficiency':<10}")
+    print(f"{'='*50}")
+    
+    # This will be populated after training
+    print(f"📈 Check individual model directories for detailed performance metrics")
+    print(f"📊 Run evaluation script to compare all models side-by-side")

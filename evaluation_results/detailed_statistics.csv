@@ -1,0 +1,5 @@
+Model,Mean Reward,Min Reward,Max Reward,Median Reward,Mean Efficiency,Mean Quality Score,Total High-Value Selections,Mean Episode Length,Skip Actions (%),Select Actions (%),Prioritize Actions (%)
+DQN,33.905 ± 3.934,25.961,43.743,33.875,0.880,0.487,54,20.0,0.0,100.0,0.0
+PPO,23.876 ± 5.137,12.552,39.006,23.242,0.802,0.510,92,20.0,14.0,52.3,33.7
+A2C,16.114 ± 5.633,4.367,30.802,15.403,0.012,0.501,0,20.0,91.6,6.9,1.5
+REINFORCE,22.761 ± 6.145,6.254,37.379,23.133,0.625,0.494,72,20.0,32.1,27.9,40.0
